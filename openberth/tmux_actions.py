@@ -248,6 +248,20 @@ def scroll_target_history(tmux_target: str, *, up: bool, lines: int = 5) -> bool
     return proc.returncode == 0
 
 
+def exit_copy_mode(tmux_target: str) -> bool:
+    """Release a pane frozen in copy-mode after scrolling up.
+
+    scroll_target_history()'s "-e" exit only fires if the user scrolls all
+    the way back to the bottom, which selecting text to copy interrupts
+    partway through. Without this, the pane stays paused on the scrolled-back
+    snapshot indefinitely after a copy.
+    """
+    proc = subprocess.run(
+        ["tmux", "send-keys", "-X", "-t", tmux_target, "cancel"], check=False
+    )
+    return proc.returncode == 0
+
+
 def capture_last_lines(tmux_target: str, lines: int) -> list[str]:
     start = -max(1, lines)
     proc = subprocess.run(

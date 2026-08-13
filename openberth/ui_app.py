@@ -33,6 +33,7 @@ from openberth.tmux_actions import (
     attach_argv_for_target,
     capture_last_lines,
     create_target,
+    exit_copy_mode,
     kill_target,
     pop_out_docked,
     pop_out_target,
@@ -1430,6 +1431,11 @@ class OpenBerthWindow(Gtk.ApplicationWindow):
         # can be pasted anywhere, not just via X11 primary middle-click.
         if terminal.get_has_selection():
             terminal.copy_clipboard_format(Vte.Format.TEXT)
+            # Selecting mid-scrollback interrupts scroll_target_history()'s
+            # scroll-to-bottom exit, leaving the pane frozen in copy-mode.
+            # A copy means the user is done looking at history; release it.
+            if self.vte_target is not None:
+                exit_copy_mode(self.vte_target)
 
     def _on_vte_right_click(self, gesture, _n_press, _x, _y) -> None:
         gesture.set_state(Gtk.EventSequenceState.CLAIMED)

@@ -6,6 +6,7 @@ from unittest.mock import Mock, patch
 from openberth.config import OpenBerthConfig, TerminalConfig
 from openberth.tmux_actions import (
     attach_argv_for_target,
+    exit_copy_mode,
     format_terminal_command,
     kill_target,
     pop_out_target,
@@ -107,6 +108,13 @@ class TmuxActionsTests(unittest.TestCase):
                 "scroll-down",
             ],
             check=False,
+        )
+
+    @patch("openberth.tmux_actions.subprocess.run", return_value=Mock(returncode=0))
+    def test_exit_copy_mode_sends_cancel(self, run_mock) -> None:
+        self.assertTrue(exit_copy_mode("forex:2.1"))
+        run_mock.assert_called_once_with(
+            ["tmux", "send-keys", "-X", "-t", "forex:2.1", "cancel"], check=False
         )
 
 
