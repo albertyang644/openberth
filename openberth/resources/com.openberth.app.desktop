@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=OpenBerth
+Comment=Organize and launch tmux targets
+Exec=openberth-ui
+Icon=com.openberth.app
+Terminal=false
+Categories=Utility;GTK;
+StartupNotify=true
+StartupWMClass=com.openberth.app
+SingleMainWindow=true

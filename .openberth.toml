@@ -1,0 +1,30 @@
+[viewer]
+type = "embedded_vte"
+attach_enabled = false
+
+[discovery]
+poll_seconds = 5
+
+[terminal]
+command = '/usr/bin/wezterm start -- tmux attach -t {session} \; select-window -t {window_target} \; select-pane -t {target}'
+
+[ui]
+theme = "dark"
+font_family = "Sans"
+font_size = 14
+mono_font_family = "Monospace"
+mono_font_size = 15
+hover_preview_enabled = true
+hover_preview_delay_ms = 2000
+
+[preview]
+lines = 4
+max_line_chars = 160
+refresh_min_interval_ms = 1000
+
+[colors]
+berth_default = "#3b82f6"
+selection = "#1f6feb"
+status_alive = "#22c55e"
+status_idle = "#eab308"
+status_dead = "#ef4444"
