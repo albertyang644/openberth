@@ -387,6 +387,7 @@ class OpenBerthWindow(Gtk.ApplicationWindow):
             "berth-move-up": lambda bid: self._move_berth(bid, -1),
             "berth-move-down": lambda bid: self._move_berth(bid, 1),
             "berth-delete": self._delete_berth,
+            "berth-delete-all": self._confirm_delete_berth_and_tvs,
         }
         for name, callback in handlers.items():
             action = Gio.SimpleAction.new(name, GLib.VariantType.new("i"))
@@ -904,6 +905,7 @@ class OpenBerthWindow(Gtk.ApplicationWindow):
         danger = Gio.Menu()
         danger.append("Unlink All TVs", f"win.berth-unlink-tvs({berth_id})")
         danger.append("Delete Berth", f"win.berth-delete({berth_id})")
+        danger.append("Delete Berth and All TVs", f"win.berth-delete-all({berth_id})")
         menu.append_section(None, danger)
         self._popup_menu(menu, self.berth_labels[berth_id])
 
@@ -1117,6 +1119,38 @@ class OpenBerthWindow(Gtk.ApplicationWindow):
             self.selected_berth_id = None
         self.store.delete_berth(berth_id)
         self.refresh()
+
+    def _confirm_delete_berth_and_tvs(self, berth_id: int) -> None:
+        targets = [t for t in self.store.list_targets(include_hidden=False) if t.berth_id == berth_id]
+        if not targets:
+            self._delete_berth(berth_id)
+            return
+        name = self._berth_name(berth_id)
+        dlg = Gtk.MessageDialog(
+            transient_for=self,
+            modal=True,
+            buttons=Gtk.ButtonsType.OK_CANCEL,
+            message_type=Gtk.MessageType.WARNING,
+            text=f'Delete berth "{name}" and kill all {len(targets)} TV(s) in it?',
+            secondary_text="This kills the running tmux processes. It cannot be undone.",
+        )
+        dlg.connect("response", self._on_delete_berth_and_tvs_confirm_response, berth_id)
+        dlg.present()
+
+    def _on_delete_berth_and_tvs_confirm_response(self, dialog, response_id, berth_id: int) -> None:
+        dialog.close()
+        if response_id != Gtk.ResponseType.OK:
+            return
+        targets = [t for t in self.store.list_targets(include_hidden=False) if t.berth_id == berth_id]
+        for t in targets:
+            if t.status == "alive":
+                kill_target(t.tmux_target, confirmed=True)
+            self.store.hide_target(t.id)
+            self.selection.selected.discard(t.id)
+        if self.selected_berth_id == berth_id:
+            self.selected_berth_id = None
+        self.store.delete_berth(berth_id)
+        self.refresh(discover=True)
 
     def _move_berth(self, berth_id: int, delta: int) -> None:
         ids = [int(r["id"]) for r in self.store.list_berths()]
