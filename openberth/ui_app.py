@@ -37,7 +37,6 @@ from openberth.tmux_actions import (
     kill_target,
     pop_out_docked,
     pop_out_target,
-    scroll_target_history,
     set_session_status_style,
 )
 
@@ -333,16 +332,17 @@ class OpenBerthWindow(Gtk.ApplicationWindow):
         self.vte_terminal = None
         self.vte_target: str | None = None
         self.vte_child_pid: int | None = None
-        self._vte_scroll_remainder = 0.0
         if Vte is not None and self.config.viewer.type == "embedded_vte":
             frame.set_child(None)
             self.vte_terminal = Vte.Terminal()
             self.vte_terminal.set_size_request(-1, -1)
             self.vte_terminal.set_focusable(True)
             self.vte_terminal.set_input_enabled(True)
-            # tmux, not VTE, owns the useful history in an attached TV. VTE's
-            # fallback maps wheel events on the alternate screen to Up/Down
-            # keys, which can accidentally reach the program in the pane.
+            # tmux owns the mouse in an attached TV (enable_mouse_selection),
+            # including the wheel, so this fallback never applies. Kept as a
+            # guard: if enabling mouse mode ever fails, VTE would otherwise
+            # map wheel events on the alternate screen to Up/Down keys and
+            # leak them into the program running in the pane.
             self.vte_terminal.set_enable_fallback_scrolling(False)
             self.vte_terminal.set_colors(
                 _rgba(TERM_FG), _rgba(TERM_BG), [_rgba(c) for c in TERM_ANSI]
@@ -353,10 +353,6 @@ class OpenBerthWindow(Gtk.ApplicationWindow):
             paste_click.set_button(3)
             paste_click.connect("pressed", self._on_vte_right_click)
             self.vte_terminal.add_controller(paste_click)
-            wheel = Gtk.EventControllerScroll.new(Gtk.EventControllerScrollFlags.VERTICAL)
-            wheel.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
-            wheel.connect("scroll", self._on_vte_scroll)
-            self.vte_terminal.add_controller(wheel)
             font_desc = Pango.FontDescription.from_string(
                 f"{self.config.ui.mono_font_family} {self.mono_font_size}"
             )
@@ -1400,7 +1396,6 @@ class OpenBerthWindow(Gtk.ApplicationWindow):
             return
         self._stop_vte_child()
         self.vte_target = new_target
-        self._vte_scroll_remainder = 0.0
         if new_target is None:
             self.vte_terminal.reset(True, True)
             return
@@ -1428,12 +1423,15 @@ class OpenBerthWindow(Gtk.ApplicationWindow):
 
     def _on_vte_selection_changed(self, terminal) -> None:
         # Copy-on-select: mirror the highlight into the real clipboard so it
-        # can be pasted anywhere, not just via X11 primary middle-click.
+        # can be pasted anywhere, not just via X11 primary middle-click. tmux
+        # owns mouse-driven selection now (enable_mouse_selection), so this
+        # only fires for Shift+drag, which bypasses tmux and asks VTE for its
+        # own local selection instead.
         if terminal.get_has_selection():
             terminal.copy_clipboard_format(Vte.Format.TEXT)
-            # Selecting mid-scrollback interrupts scroll_target_history()'s
-            # scroll-to-bottom exit, leaving the pane frozen in copy-mode.
-            # A copy means the user is done looking at history; release it.
+            # If the user had scrolled up (wheel) before Shift-dragging, the
+            # pane may still be in copy-mode; release it now that they've
+            # copied what they wanted. No-op if it wasn't in a mode.
             if self.vte_target is not None:
                 exit_copy_mode(self.vte_target)
 
@@ -1442,20 +1440,6 @@ class OpenBerthWindow(Gtk.ApplicationWindow):
         if self.vte_terminal is not None:
             self.vte_terminal.grab_focus()
             self.vte_terminal.paste_clipboard()
-
-    def _on_vte_scroll(self, _controller, _dx: float, dy: float) -> bool:
-        if self.vte_target is None or dy == 0:
-            return False
-
-        # Mouse wheels report whole units while touchpads report small smooth
-        # deltas. Accumulating avoids spawning tmux for every tiny event.
-        self._vte_scroll_remainder += dy
-        units = int(abs(self._vte_scroll_remainder))
-        if units:
-            up = self._vte_scroll_remainder < 0
-            self._vte_scroll_remainder += units if up else -units
-            scroll_target_history(self.vte_target, up=up, lines=units * 5)
-        return True
 
     def _stop_vte_child(self) -> None:
         if self.vte_child_pid is None:

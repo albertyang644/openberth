@@ -6,6 +6,7 @@ from unittest.mock import Mock, patch
 from openberth.config import OpenBerthConfig, TerminalConfig
 from openberth.tmux_actions import (
     attach_argv_for_target,
+    enable_mouse_selection,
     exit_copy_mode,
     format_terminal_command,
     kill_target,
@@ -116,6 +117,40 @@ class TmuxActionsTests(unittest.TestCase):
         run_mock.assert_called_once_with(
             ["tmux", "send-keys", "-X", "-t", "forex:2.1", "cancel"], check=False
         )
+
+    @patch("openberth.tmux_actions.shutil.which", side_effect=lambda c: "/usr/bin/xclip")
+    @patch("openberth.tmux_actions.os.environ", {})
+    @patch(
+        "openberth.tmux_actions.subprocess.run",
+        return_value=Mock(returncode=0, stdout=""),
+    )
+    def test_enable_mouse_selection_scopes_mouse_and_unbinds_menu(
+        self, run_mock, _which
+    ) -> None:
+        enable_mouse_selection("forex")
+        run_mock.assert_any_call(
+            ["tmux", "set-option", "-t", "forex", "mouse", "on"], check=False
+        )
+        run_mock.assert_any_call(
+            ["tmux", "unbind-key", "-T", "root", "MouseDown3Pane"], check=False
+        )
+        run_mock.assert_any_call(
+            ["tmux", "set-option", "-g", "copy-command", "xclip -selection clipboard -i"],
+            check=False,
+        )
+
+    @patch("openberth.tmux_actions.shutil.which", side_effect=lambda c: "/usr/bin/xclip")
+    @patch("openberth.tmux_actions.os.environ", {})
+    @patch(
+        "openberth.tmux_actions.subprocess.run",
+        return_value=Mock(returncode=0, stdout="my-own-copier\n"),
+    )
+    def test_enable_mouse_selection_does_not_clobber_existing_copy_command(
+        self, run_mock, _which
+    ) -> None:
+        enable_mouse_selection("forex")
+        for call in run_mock.call_args_list:
+            self.assertNotIn("-g", call.args[0])
 
 
 if __name__ == "__main__":

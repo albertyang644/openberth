@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import shlex
+import shutil
 import subprocess
 import time
 
@@ -74,11 +75,73 @@ def _target_parts(tmux_target: str) -> tuple[str, str, str]:
     return session, window_target, pane_index
 
 
+def _clipboard_command() -> str:
+    """VTE does not honor OSC 52 clipboard writes, so tmux's default
+    set-clipboard route lands in a tmux paste buffer and nowhere else. Pipe to
+    a real clipboard tool instead."""
+    if os.environ.get("WAYLAND_DISPLAY") and shutil.which("wl-copy"):
+        return "wl-copy"
+    if shutil.which("xclip"):
+        return "xclip -selection clipboard -i"
+    if shutil.which("xsel"):
+        return "xsel --clipboard --input"
+    return ""
+
+
+def _ensure_copy_command() -> None:
+    """Point argument-less `copy-pipe` at a real clipboard tool.
+
+    tmux's MouseDragEnd1Pane binding runs copy-pipe-and-cancel with no
+    argument, which pipes to `copy-command`. That option is documented as
+    per-session but tmux (through at least 3.4) stores it in the global
+    table, so there is no way to scope it -- set it explicitly, once, and
+    only when empty, so a deliberate user setting is never clobbered.
+    """
+    clipboard = _clipboard_command()
+    if not clipboard:
+        return
+    proc = subprocess.run(
+        ["tmux", "show-options", "-gv", "copy-command"],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    if proc.returncode != 0 or proc.stdout.strip():
+        return
+    subprocess.run(["tmux", "set-option", "-g", "copy-command", clipboard], check=False)
+
+
+def enable_mouse_selection(session: str) -> None:
+    """Hand mouse ownership of the pane to tmux for the session a client is
+    about to attach to, so drag-to-edge autoscroll and copy-on-drag-end work
+    like a normal window.
+
+    The embedded viewer shows an attached tmux client, which draws on the
+    alternate screen -- the VTE widget has no scrollback of its own, so its
+    drag-to-edge autoscroll has nothing to move. tmux owns the real buffer,
+    and root MouseDrag1Pane already runs "copy-mode -M" (real edge-autoscroll)
+    whenever the pane isn't already in a mode.
+
+    Right-click is the one collision: root MouseDown3Pane's default action is
+    display-menu, which fires from the same physical click that VTE forwards
+    to the app's own paste-on-right-click handler -- pasted text then gets
+    read as menu accelerator keys (h/v = split, X = kill-pane, R = respawn),
+    which is what broke sessions the first time this was tried. Key tables in
+    tmux are server-global, not per-session, so this unbind is global too;
+    it's idempotent and safe to repeat on every attach. Alt+right-click
+    (M-MouseDown3Pane) is left as a deliberate escape hatch to tmux's menu.
+    """
+    subprocess.run(["tmux", "set-option", "-t", session, "mouse", "on"], check=False)
+    subprocess.run(["tmux", "unbind-key", "-T", "root", "MouseDown3Pane"], check=False)
+    _ensure_copy_command()
+
+
 def _prepare_attach_target(tmux_target: str) -> str:
     session, window_target, pane_index = _target_parts(tmux_target)
     if not _session_has_attached_client(session):
         subprocess.run(["tmux", "select-window", "-t", window_target], check=False)
         subprocess.run(["tmux", "select-pane", "-t", tmux_target], check=False)
+        enable_mouse_selection(session)
         return session
 
     window_index = window_target.rsplit(":", 1)[1]
@@ -90,7 +153,12 @@ def _prepare_attach_target(tmux_target: str) -> str:
         capture_output=True,
     )
     if proc.returncode != 0:
+        enable_mouse_selection(session)
         return session
+    # Grouped sessions share windows but keep independent options, and the
+    # original already has a client attached -- flip mouse mode on the
+    # ephemeral view, not underneath a terminal someone is actively using.
+    enable_mouse_selection(view_name)
     subprocess.run(
         ["tmux", "set-hook", "-t", view_name, "client-detached", f"kill-session -t {view_name}"],
         check=False,
