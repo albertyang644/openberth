@@ -52,6 +52,8 @@ except (ValueError, ImportError):
 
 PALETTE = ["#64748b", "#ef4444", "#10b981", "#3b82f6", "#f59e0b", "#8b5cf6"]
 UNGROUPED_COLOR = "#94a3b8"
+BERTH_HAND_REST_COLOR = "transparent"
+BERTH_HAND_ARMED_COLOR = "#ef4444"
 # Embedded terminal colors. VTE's built-in ANSI palette has a near-unreadable
 # dark blue; this modern palette keeps every color legible on a dark background.
 TERM_FG = "#e5e7eb"
@@ -166,6 +168,9 @@ class OpenBerthWindow(Gtk.ApplicationWindow):
         self.tile_rows: dict[int, Gtk.Box] = {}
         self.berth_labels: dict[int | None, Gtk.Label] = {}
         self.berth_entries: dict[int | None, Gtk.Entry] = {}
+        self.berth_sections: dict[int, Gtk.Widget] = {}
+        self.berth_hands: dict[int, Gtk.Label] = {}
+        self.armed_berth_id: int | None = None
         self.hover_timers: dict[int, int] = {}
         self.session_status_colors: dict[str, str] = {}
         self.mono_font_size = self.config.ui.mono_font_size
@@ -260,6 +265,9 @@ class OpenBerthWindow(Gtk.ApplicationWindow):
         self.harbor_body.set_margin_start(8)
         self.harbor_body.set_margin_end(8)
         self.harbor_body.set_margin_bottom(8)
+        harbor_motion = Gtk.EventControllerMotion()
+        harbor_motion.connect("motion", self._on_harbor_motion)
+        self.harbor_body.add_controller(harbor_motion)
         scrolled.set_child(self.harbor_body)
         self.left.append(scrolled)
 
@@ -535,12 +543,19 @@ class OpenBerthWindow(Gtk.ApplicationWindow):
         if discover:
             self.store.upsert_discovered_targets(discover_tmux_targets())
             self.health_banner.set_visible(not tmux_server_running())
+        # A full rebuild while a berth is mid-drag would wipe the in-progress
+        # arm state without persisting or resetting it cleanly. External
+        # refreshes (e.g. the poll timer) are rare enough mid-drag to just
+        # abort the drag rather than persist a possibly-incomplete order.
+        self.armed_berth_id = None
         for child in list(_iter_children(self.harbor_body)):
             self.harbor_body.remove(child)
         self.minimaps.clear()
         self.tile_rows.clear()
         self.berth_labels.clear()
         self.berth_entries.clear()
+        self.berth_sections.clear()
+        self.berth_hands.clear()
 
         targets = self._visible_targets()
         self.row_order = [t.id for t in targets]
@@ -618,6 +633,17 @@ class OpenBerthWindow(Gtk.ApplicationWindow):
         header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
         header.set_css_classes(["berth-header"])
         if berth_id is not None:
+            hand = Gtk.Label(label="✋")
+            hand.set_css_classes(["berth-hand"])
+            armed = self.armed_berth_id == berth_id
+            _set_widget_bg(hand, BERTH_HAND_ARMED_COLOR if armed else BERTH_HAND_REST_COLOR)
+            hand.set_tooltip_text("Click to pick up, move the mouse to reorder, click again to drop")
+            hand_press = Gtk.GestureClick.new()
+            hand_press.set_button(1)
+            hand_press.connect("pressed", self._on_berth_hand_pressed, berth_id)
+            hand.add_controller(hand_press)
+            header.append(hand)
+            self.berth_hands[berth_id] = hand
             for icon, tooltip, delta in [
                 ("pan-up-symbolic", "Move Berth Up", -1),
                 ("pan-down-symbolic", "Move Berth Down", 1),
@@ -663,6 +689,8 @@ class OpenBerthWindow(Gtk.ApplicationWindow):
         drop.connect("drop", self._on_drop_to_berth, berth_id)
         section.add_controller(drop)
 
+        if berth_id is not None:
+            self.berth_sections[berth_id] = section
         self.harbor_body.append(section)
 
     def _tile_widget(self, t: TargetRow, berth_color: str) -> Gtk.Widget:
@@ -1162,6 +1190,63 @@ class OpenBerthWindow(Gtk.ApplicationWindow):
             return
         ids[i], ids[j] = ids[j], ids[i]
         self.store.set_berth_sort_orders(ids)
+        self.refresh()
+
+    # ---------- berth pick-up-and-carry reordering ----------
+
+    def _on_berth_hand_pressed(self, _gesture, _n_press, _x, _y, berth_id: int) -> None:
+        if self.armed_berth_id == berth_id:
+            self._drop_armed_berth()
+            return
+        if self.armed_berth_id is not None:
+            return
+        self.armed_berth_id = berth_id
+        hand = self.berth_hands.get(berth_id)
+        if hand is not None:
+            _set_widget_bg(hand, BERTH_HAND_ARMED_COLOR)
+
+    def _on_harbor_motion(self, _controller, _x: float, y: float) -> None:
+        if self.armed_berth_id is None:
+            return
+        section = self.berth_sections.get(self.armed_berth_id)
+        if section is None:
+            return
+        section_to_berth = {v: k for k, v in self.berth_sections.items()}
+        children = list(_iter_children(self.harbor_body))
+        if section not in children:
+            return
+        # The ungrouped section (if present) is always the first child and
+        # isn't part of berth sort order -- keep it pinned above every berth.
+        first = children[0] if children else None
+        pinned = first if first is not None and first not in section_to_berth else None
+
+        others = [c for c in children if c in section_to_berth and c is not section]
+        target_index = len(others)
+        for i, other in enumerate(others):
+            ok, bounds = other.compute_bounds(self.harbor_body)
+            if ok and y < bounds.get_y() + bounds.get_height() / 2:
+                target_index = i
+                break
+
+        current_index = [c for c in children if c in section_to_berth].index(section)
+        if target_index == current_index:
+            return
+        sibling = pinned if target_index == 0 else others[target_index - 1]
+        self.harbor_body.reorder_child_after(section, sibling)
+
+    def _drop_armed_berth(self) -> None:
+        berth_id = self.armed_berth_id
+        if berth_id is None:
+            return
+        self.armed_berth_id = None
+        hand = self.berth_hands.get(berth_id)
+        if hand is not None:
+            _set_widget_bg(hand, BERTH_HAND_REST_COLOR)
+        section_to_berth = {v: k for k, v in self.berth_sections.items()}
+        ordered_ids = [
+            section_to_berth[c] for c in _iter_children(self.harbor_body) if c in section_to_berth
+        ]
+        self.store.set_berth_sort_orders(ordered_ids)
         self.refresh()
 
     def _toggle_berth_collapse(self, berth_id: int) -> None:
@@ -1689,6 +1774,13 @@ class OpenBerthWindow(Gtk.ApplicationWindow):
         .berth-move-btn:hover {
             background: %(surface_hover)s;
             color: %(fg)s;
+        }
+        .berth-hand {
+            font-size: 13px;
+            min-width: 20px;
+            min-height: 20px;
+            padding: 1px 4px;
+            border-radius: 6px;
         }
         .berth-add-tv {
             min-width: 28px;
