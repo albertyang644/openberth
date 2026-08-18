@@ -2,8 +2,8 @@
 
 OpenBerth is a GTK desktop app for organizing running tmux targets as visual "TVs" grouped into "berths". It is not a terminal manager and it does not own shell processes. tmux remains the source of truth; OpenBerth stores metadata that makes those tmux targets easier to find, group, preview, launch, close from the workspace, and safely kill when explicitly requested.
 
-Obsidian map: [[OpenBerth Map]].
-Design source: [[openberth_specifications|UI specification]].
+Obsidian map: [OpenBerth Map](openberth-map.md).
+Design source: [UI specification](openberth-specifications.md).
 
 ## Concept
 
@@ -206,6 +206,17 @@ active TV. Two things are worth knowing:
   right-click paste behave like a normal terminal window. `Alt`+right-click is left
   bound as an escape hatch to tmux's own menu. These are the only tmux options
   OpenBerth writes on its own.
+
+  **This is the most invasive thing OpenBerth does, and the most brittle.** Those
+  are writes to your live tmux server, and a session option affects every client
+  attached to that session, not just OpenBerth's viewer. An earlier version also
+  set a global `copy-command`; tmux 3.4 documents `copy-command` as a session
+  option but stores it globally, so that one setting broke copy/paste across
+  unrelated sessions and a paste killed a running process. The current code sets
+  only `mouse` (which does scope per-session correctly) and leaves any existing
+  `copy-command` alone. Still: test against a scratch server (`tmux -L scratch`)
+  before trusting it with work you cannot lose. Set `[viewer] type = "metadata"`
+  to avoid the embedded terminal entirely.
 - **Second attach to a busy session.** tmux's current window is per-session, not
   per-client, so attaching a second TV from the same session would yank the other
   client's view. OpenBerth instead attaches through a throwaway grouped session named
@@ -305,9 +316,9 @@ TV data:
 - `README.md` (repository root): GitHub-facing overview.
 - `docs/README.md`: main human-facing guide (this file).
 - `docs/quickstart.md`: short setup and workflow checklist.
-- `docs/openberth_specifications.md`: interaction specification notes.
-- `docs/User Model.md`: product model notes.
-- `docs/Architecture.md`: architecture notes.
-- `docs/Desktop Launch.md`: desktop integration notes.
-- `docs/Development Workflow.md`: development notes.
-- `docs/OpenBerth Map.md`: note index.
+- `docs/openberth-specifications.md`: interaction specification notes.
+- `docs/user-model.md`: product model notes.
+- `docs/architecture.md`: architecture notes.
+- `docs/desktop-launch.md`: desktop integration notes.
+- `docs/development-workflow.md`: development notes.
+- `docs/openberth-map.md`: note index.

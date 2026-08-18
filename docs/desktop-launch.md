@@ -8,7 +8,7 @@ tags:
 
 OpenBerth is installable as a local Python package and launchable from KDE.
 
-Related files are documented in [[README|OpenBerth README]]. The installed commands are:
+Related files are documented in [OpenBerth README](README.md). The installed commands are:
 
 - `openberth`
 - `openberth-ui`
@@ -24,6 +24,6 @@ That shared identity lets KDE connect the application launcher, taskbar icon, an
 
 Related notes:
 
-- [[OpenBerth Map]]
-- [[Architecture]]
-- [[Development Workflow]]
+- [OpenBerth Map](openberth-map.md)
+- [Architecture](architecture.md)
+- [Development Workflow](development-workflow.md)

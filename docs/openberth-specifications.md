@@ -1,6 +1,6 @@
 # OpenBerth UI Revision – TV Model (Codex Update)
 
-Related notes: [[OpenBerth Map]], [[User Model]], [[Architecture]], [[Desktop Launch]].
+Related notes: [OpenBerth Map](openberth-map.md), [User Model](user-model.md), [Architecture](architecture.md), [Desktop Launch](desktop-launch.md).
 
 ## Philosophy Shift
 

@@ -9,7 +9,7 @@ description = "GTK tmux target organizer and launcher"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
-authors = [{ name = "OpenBerth contributors" }]
+authors = [{ name = "Albert Yang" }]
 keywords = ["gtk", "kde", "tmux", "terminal"]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -22,6 +22,11 @@ classifiers = [
     "Topic :: Desktop Environment",
     "Topic :: Utilities",
 ]
+
+[project.urls]
+Homepage = "https://github.com/albertyang644/openberth"
+Repository = "https://github.com/albertyang644/openberth"
+Issues = "https://github.com/albertyang644/openberth/issues"
 
 [project.scripts]
 openberth = "openberth.app:main"
@@ -37,3 +42,14 @@ openberth = ["resources/*"]
 [tool.setuptools.data-files]
 "share/applications" = ["openberth/resources/com.openberth.app.desktop"]
 "share/icons/hicolor/scalable/apps" = ["openberth/resources/com.openberth.app.svg"]
+
+[tool.ruff]
+line-length = 110
+
+[tool.ruff.lint.per-file-ignores]
+# The CSS template is one big printf-style block with named placeholders;
+# f-strings would fight the literal braces in the CSS itself.
+"openberth/ui_app.py" = ["UP031"]
+# setUp/tearDown own the temp file's lifetime across test methods, which is
+# exactly what a context manager cannot express.
+"tests/*" = ["SIM115"]

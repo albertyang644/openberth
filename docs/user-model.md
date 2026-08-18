@@ -6,16 +6,16 @@ tags:
 
 # User Model
 
-The product model comes from [[openberth_specifications|UI specification]].
+The product model comes from [UI specification](openberth-specifications.md).
 
 OpenBerth presents tmux targets as TVs. Users organize TVs into berths, select them with familiar desktop selection behavior, and launch or pop out terminals without OpenBerth owning tmux.
 
 Related ideas:
 
-- [[Architecture]] stores TVs and berths as metadata.
-- [[Desktop Launch]] makes OpenBerth feel like a normal KDE app.
-- [[Development Workflow]] verifies behavior with focused tests.
-- [[README|OpenBerth README]] documents how to run the app.
+- [Architecture](architecture.md) stores TVs and berths as metadata.
+- [Desktop Launch](desktop-launch.md) makes OpenBerth feel like a normal KDE app.
+- [Development Workflow](development-workflow.md) verifies behavior with focused tests.
+- [OpenBerth README](README.md) documents how to run the app.
 
 Important behaviors:
 

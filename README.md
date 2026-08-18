@@ -47,6 +47,7 @@ delete-with-or-without-its-TVs) instead of buttons competing for space in the la
 - Cairo-drawn activity minimaps and live text previews from captured pane output
 - Embedded VTE terminal with drag-to-edge autoscroll, copy-on-select, and right-click
   paste — tmux owns the mouse, so it behaves like a normal window
+  ([caveats](#status-and-caveats))
 - Pop out TVs into wezterm windows, docked as tabs per berth
 - Search across names, targets, and berths (Ctrl+P); restore closed TVs (Ctrl+Shift+T)
 - "Delete Berth" orphans its TVs (ungrouped); "Delete Berth and All TVs" kills them
@@ -84,10 +85,39 @@ python3 -m unittest discover -s tests -p "test_*.py"
 The core (discovery, store, grouping, selection, tmux actions) has no GTK dependency
 and is fully unit tested; `ui_app.py` is the GTK presentation layer on top of it.
 
-Docs live in [docs/](docs/): [architecture](docs/Architecture.md),
-[user model](docs/User%20Model.md), [UI specification](docs/openberth_specifications.md),
+Docs live in [docs/](docs/): [architecture](docs/architecture.md),
+[user model](docs/user-model.md), [UI specification](docs/openberth-specifications.md),
 [quickstart](docs/quickstart.md). The original hand-drawn design sketch is in
 [assets/ui-mockup.png](assets/ui-mockup.png).
+
+## Status and Caveats
+
+Alpha (0.1.0), and honest about it: this is developed against one setup —
+Kubuntu/KDE, GTK4, VTE 0.76, wezterm, tmux 3.4. It will meet your machine in ways
+it has not met mine.
+
+**The mouse handoff is the brittle part.** To get drag-to-edge autoscroll and
+copy-on-select, attaching a TV sets `mouse on` on that tmux session and unbinds
+the root `MouseDown3Pane` binding. Those are writes to *your live tmux server*,
+not to a sandbox, and they affect every client attached to that session — not
+just OpenBerth. An earlier version of this also set a global `copy-command` and
+broke copy/paste across the author's sessions badly enough to kill a running
+process. That specific cause is fixed, but the mechanism is inherently invasive:
+if you have tmux mouse or copy-mode bindings you care about, try OpenBerth
+against a scratch tmux server first (`tmux -L scratch`) before pointing it at
+work you cannot lose.
+
+Other things worth knowing:
+
+- `ui_app.py` is the large, untested part of the codebase; the core beneath it
+  (discovery, store, grouping, selection, tmux actions) is GTK-free and covered
+  by tests.
+- State lives at `~/.openberth.db` and `~/.openberth.toml`, not in XDG
+  directories.
+- The default pop-out terminal is wezterm. Other terminals work via
+  `[terminal] command`, but wezterm is the only one exercised regularly.
+- Killing a target, and the skull-icon purge, are the only destructive actions.
+  Both confirm first; the purge confirms twice.
 
 ## License
 
