@@ -5,7 +5,7 @@ from dataclasses import dataclass
 import gi
 
 gi.require_version("Gtk", "4.0")
-from gi.repository import Gdk, Gio, Gtk  # noqa: E402
+from gi.repository import Gdk, Gio, Gtk
 
 
 @dataclass
@@ -186,7 +186,7 @@ class SketchWindow(Gtk.ApplicationWindow):
             n = widget.get_name()
             if n and n.startswith("#"):
                 cp = Gtk.CssProvider()
-                cp.load_from_data(f"*{{color:{n}; background:{n};}}".encode("utf-8"))
+                cp.load_from_data(f"*{{color:{n}; background:{n};}}".encode())
                 widget.get_style_context().add_provider(cp, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
             c = widget.get_first_child()
             while c is not None:

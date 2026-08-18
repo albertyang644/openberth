@@ -42,11 +42,11 @@ from openberth.tmux_actions import (
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
-from gi.repository import Gdk, Gio, GLib, Gtk, Pango  # noqa: E402
+from gi.repository import Gdk, Gio, GLib, Gtk, Pango
 
 try:
     gi.require_version("Vte", "3.91")
-    from gi.repository import Vte  # noqa: E402
+    from gi.repository import Vte
 except (ValueError, ImportError):
     Vte = None
 

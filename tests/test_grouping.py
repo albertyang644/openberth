@@ -3,7 +3,11 @@ from __future__ import annotations
 import tempfile
 import unittest
 
-from openberth.grouping import link_targets_to_new_berth, move_targets_to_berth, unlink_targets
+from openberth.grouping import (
+    link_targets_to_new_berth,
+    move_targets_to_berth,
+    unlink_targets,
+)
 from openberth.models import DiscoveredTarget
 from openberth.store import Store
 
