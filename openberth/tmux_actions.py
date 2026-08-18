@@ -264,9 +264,51 @@ def kill_target(tmux_target: str, *, confirmed: bool) -> bool:
     return _pane_pid(check_target) is None
 
 
+def tmux_server_running() -> bool:
+    # tmux exits when its last session closes, so there is no "server up but no
+    # sessions" state to distinguish: has-session succeeds iff a server is up.
+    proc = subprocess.run(["tmux", "has-session"], check=False, capture_output=True)
+    return proc.returncode == 0
+
+
+def spawn_tmux_session(argv: list[str]) -> subprocess.CompletedProcess:
+    """Run a tmux command that may start the server, outside our systemd scope.
+
+    The desktop launcher runs OpenBerth inside
+    `app-com.openberth.app-<hash>.scope`. A tmux server started from here with a
+    plain subprocess inherits that cgroup, and systemd's default
+    KillMode=control-group kills the server -- and every session in it -- the
+    moment OpenBerth exits. That defeats the entire point of tmux; it is how 38
+    sessions were lost on 2026-08-17.
+
+    systemd-run puts the server in its own scope under app.slice, a sibling of
+    ours rather than a child, so it outlives the app. setsid and daemonizing do
+    not help: neither changes cgroup membership. Note this has to wrap the
+    command that actually creates the session -- `tmux start-server` on its own
+    exits immediately when there are no sessions, so pre-starting a server
+    would leave the real one to be born in our cgroup anyway.
+
+    Once any server is up, later commands just talk to it, so the wrapper is
+    only needed for the one call that brings it into existence.
+    """
+    if tmux_server_running() or shutil.which("systemd-run") is None:
+        return subprocess.run(argv, check=False)
+    scoped = [
+        "systemd-run", "--user", "--scope", "--quiet", "--collect",
+        "--unit", f"openberth-tmux-{os.getpid()}-{time.time_ns()}",
+        *argv,
+    ]
+    proc = subprocess.run(scoped, check=False, capture_output=True)
+    if proc.returncode != 0:
+        # Better a server in the wrong cgroup than no server at all: the user
+        # gets a working app, just without the survival guarantee.
+        return subprocess.run(argv, check=False)
+    return proc
+
+
 def create_target(session_name: str | None = None) -> str | None:
     name = session_name or f"openberth-{int(time.time())}"
-    proc = subprocess.run(["tmux", "new-session", "-d", "-s", name], check=False)
+    proc = spawn_tmux_session(["tmux", "new-session", "-d", "-s", name])
     if proc.returncode != 0:
         return None
     target = subprocess.run(

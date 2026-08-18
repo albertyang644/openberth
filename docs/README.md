@@ -178,6 +178,24 @@ TVs expose these common actions:
 - Close TV: hide it from OpenBerth while tmux keeps running.
 - Kill Target: kill the underlying tmux pane after confirmation.
 
+## Session Lifetime
+
+Sessions OpenBerth creates outlive OpenBerth, which is the whole point of tmux.
+This takes explicit work on a systemd desktop: KDE runs the app inside
+`app-com.openberth.app-<hash>.scope`, and a tmux server started from there with a
+plain subprocess inherits that cgroup, so systemd kills the server -- and every
+session in it -- when the app exits.
+
+OpenBerth therefore creates the first session through
+`systemd-run --user --scope`, which puts the server in its own scope under
+`app.slice`, a sibling of the app rather than a child. Once any server is up,
+later commands just talk to it, so only the call that brings the server into
+existence needs wrapping. On a system without `systemd-run`, nothing traps the
+server and the plain command is used.
+
+If you start tmux yourself from a terminal, none of this applies -- that server
+belongs to the scope that started it.
+
 ## Embedded Terminal
 
 With the default `embedded_vte` viewer, the right panel attaches a real terminal to the

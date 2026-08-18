@@ -6,6 +6,7 @@ from unittest.mock import Mock, patch
 from openberth.config import OpenBerthConfig, TerminalConfig
 from openberth.tmux_actions import (
     attach_argv_for_target,
+    create_target,
     enable_mouse_selection,
     exit_copy_mode,
     format_terminal_command,
@@ -13,6 +14,7 @@ from openberth.tmux_actions import (
     pop_out_target,
     scroll_target_history,
     set_session_status_style,
+    spawn_tmux_session,
 )
 
 
@@ -82,6 +84,58 @@ class TmuxActionsTests(unittest.TestCase):
             self.assertNotIn("run-shell", body)
             self.assertNotIn(";", body)
             self.assertEqual(body, "kill-session -t __openberth_view_456_123")
+
+    @patch("openberth.tmux_actions.shutil.which", return_value="/usr/bin/systemd-run")
+    @patch("openberth.tmux_actions.tmux_server_running", return_value=False)
+    @patch("openberth.tmux_actions.subprocess.run", return_value=Mock(returncode=0))
+    def test_server_is_started_outside_the_app_cgroup(self, run_mock, _up, _which) -> None:
+        # A server started with a plain subprocess inherits OpenBerth's systemd
+        # app scope and is killed with it, taking every session down.
+        spawn_tmux_session(["tmux", "new-session", "-d", "-s", "demo"])
+
+        argv = run_mock.call_args_list[0].args[0]
+        self.assertEqual(argv[0], "systemd-run")
+        self.assertIn("--user", argv)
+        self.assertIn("--scope", argv)
+        # the session-creating command itself must be inside the scope
+        self.assertEqual(argv[-5:], ["tmux", "new-session", "-d", "-s", "demo"])
+        self.assertEqual(len(run_mock.call_args_list), 1)
+
+    @patch("openberth.tmux_actions.shutil.which", return_value="/usr/bin/systemd-run")
+    @patch("openberth.tmux_actions.tmux_server_running", return_value=True)
+    @patch("openberth.tmux_actions.subprocess.run")
+    def test_existing_server_is_not_wrapped(self, run_mock, _up, _which) -> None:
+        # server is already up (and already in whatever scope started it), so
+        # this call cannot create one -- no need to pay for systemd-run
+        spawn_tmux_session(["tmux", "new-session", "-d", "-s", "demo"])
+        run_mock.assert_called_once_with(
+            ["tmux", "new-session", "-d", "-s", "demo"], check=False
+        )
+
+    @patch("openberth.tmux_actions.shutil.which", return_value=None)
+    @patch("openberth.tmux_actions.tmux_server_running", return_value=False)
+    @patch("openberth.tmux_actions.subprocess.run", return_value=Mock(returncode=0))
+    def test_falls_back_to_plain_start_without_systemd_run(self, run_mock, _up, _which) -> None:
+        spawn_tmux_session(["tmux", "new-session", "-d", "-s", "demo"])
+        run_mock.assert_called_once_with(
+            ["tmux", "new-session", "-d", "-s", "demo"], check=False
+        )
+
+    @patch("openberth.tmux_actions.shutil.which", return_value="/usr/bin/systemd-run")
+    @patch("openberth.tmux_actions.tmux_server_running", return_value=False)
+    @patch("openberth.tmux_actions.subprocess.run")
+    def test_falls_back_to_plain_start_when_systemd_run_fails(self, run_mock, _up, _which) -> None:
+        run_mock.side_effect = [Mock(returncode=1, stderr=b""), Mock(returncode=0)]
+        spawn_tmux_session(["tmux", "new-session", "-d", "-s", "demo"])
+        self.assertEqual(
+            run_mock.call_args_list[-1].args[0], ["tmux", "new-session", "-d", "-s", "demo"]
+        )
+
+    @patch("openberth.tmux_actions.spawn_tmux_session")
+    def test_create_target_spawns_through_the_scope_wrapper(self, spawn_mock) -> None:
+        spawn_mock.return_value = Mock(returncode=1)
+        create_target("demo")
+        spawn_mock.assert_called_once_with(["tmux", "new-session", "-d", "-s", "demo"])
 
     @patch("openberth.tmux_actions.subprocess.run")
     def test_kill_requires_confirmation(self, run_mock) -> None:
