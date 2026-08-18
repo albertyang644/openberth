@@ -235,6 +235,11 @@ class OpenBerthWindow(Gtk.ApplicationWindow):
         btn_new.set_tooltip_text("New Berth + TV")
         btn_new.connect("clicked", lambda *_: self._prompt_create_berth())
         top.append(btn_new)
+        purge = Gtk.Button(label="\u2620")
+        purge.set_css_classes(["icon-button", "purge-button"])
+        purge.set_tooltip_text("Kill All TVs and Clear All Berths")
+        purge.connect("clicked", lambda *_: self._confirm_purge_all())
+        top.append(purge)
         settings = Gtk.MenuButton()
         settings.set_icon_name("open-menu-symbolic")
         settings.set_css_classes(["icon-button"])
@@ -1180,6 +1185,71 @@ class OpenBerthWindow(Gtk.ApplicationWindow):
         self.store.delete_berth(berth_id)
         self.refresh(discover=True)
 
+    # ---------- purge everything ----------
+
+    def _confirm_purge_all(self) -> None:
+        """Kill every TV and clear every berth, behind two confirmations.
+
+        This is the only action in the app that is destructive across the whole
+        workspace rather than one target or berth, so it asks twice on purpose:
+        a misclick on the header should never be one OK away from killing every
+        tmux process the user has.
+        """
+        targets = self.store.list_targets(include_hidden=False)
+        alive = [t for t in targets if t.status == "alive"]
+        berths = self.store.list_berths()
+        if not targets and not berths:
+            return
+        dlg = Gtk.MessageDialog(
+            transient_for=self,
+            modal=True,
+            buttons=Gtk.ButtonsType.OK_CANCEL,
+            message_type=Gtk.MessageType.WARNING,
+            text=f"Kill all {len(alive)} running TV(s) and clear all {len(berths)} berth(s)?",
+            secondary_text=(
+                "This kills every running tmux process OpenBerth knows about and "
+                "removes every TV and berth from the workspace. It cannot be undone."
+            ),
+        )
+        dlg.connect("response", self._on_purge_first_response)
+        dlg.present()
+
+    def _on_purge_first_response(self, dialog, response_id) -> None:
+        dialog.close()
+        if response_id != Gtk.ResponseType.OK:
+            return
+        alive = [t for t in self.store.list_targets(include_hidden=False) if t.status == "alive"]
+        dlg = Gtk.MessageDialog(
+            transient_for=self,
+            modal=True,
+            buttons=Gtk.ButtonsType.OK_CANCEL,
+            message_type=Gtk.MessageType.ERROR,
+            text="ARE YOU REALLY SURE?",
+            secondary_text=(
+                f"Last chance. {len(alive)} live tmux process(es) will be killed and "
+                "the whole workspace will be emptied."
+            ),
+        )
+        dlg.connect("response", self._on_purge_second_response)
+        dlg.present()
+
+    def _on_purge_second_response(self, dialog, response_id) -> None:
+        dialog.close()
+        if response_id != Gtk.ResponseType.OK:
+            return
+        self._purge_all()
+
+    def _purge_all(self) -> None:
+        for t in self.store.list_targets(include_hidden=True):
+            if t.status == "alive":
+                kill_target(t.tmux_target, confirmed=True)
+        self.store.purge_all()
+        self.selection.selected.clear()
+        self.selected_berth_id = None
+        self.armed_berth_id = None
+        self.collapsed.clear()
+        self.refresh(discover=True)
+
     def _move_berth(self, berth_id: int, delta: int) -> None:
         ids = [int(r["id"]) for r in self.store.list_berths()]
         if berth_id not in ids:
@@ -1703,6 +1773,15 @@ class OpenBerthWindow(Gtk.ApplicationWindow):
         .icon-button:hover, .utility-button:hover {
             color: %(fg)s;
         }
+        .purge-button {
+            color: %(status_dead)s;
+            font-size: 15px;
+        }
+        .purge-button:hover {
+            background: %(status_dead)s;
+            border-color: %(status_dead)s;
+            color: #ffffff;
+        }
         .accent-button, .primary-button {
             background: %(selection)s;
             color: #ffffff;
@@ -2014,6 +2093,7 @@ class OpenBerthWindow(Gtk.ApplicationWindow):
             "font": self.config.ui.font_family,
             "size": self.config.ui.font_size,
             "selection": self.config.colors.selection,
+            "status_dead": self.config.colors.status_dead,
             "dim": UNGROUPED_COLOR,
             "mono": self.config.ui.mono_font_family,
             "mono_size": self.config.ui.mono_font_size,

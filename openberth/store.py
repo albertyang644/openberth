@@ -98,6 +98,20 @@ class Store:
         self.conn.execute("DELETE FROM berths WHERE id = ?", (berth_id,))
         self.conn.commit()
 
+    def purge_all(self) -> None:
+        """Drop every TV and berth, leaving settings intact.
+
+        Discovery repopulates targets from tmux, so deleting rows here is the
+        only thing that actually clears out dead ones -- upsert_discovered_targets
+        marks a vanished target 'dead' but never removes it, so tombstones
+        otherwise accumulate forever.
+        """
+        self.conn.execute("DELETE FROM target_previews")
+        self.conn.execute("DELETE FROM closed_tvs")
+        self.conn.execute("DELETE FROM targets")
+        self.conn.execute("DELETE FROM berths")
+        self.conn.commit()
+
     def list_berths(self) -> list[sqlite3.Row]:
         return self.conn.execute(
             "SELECT id, name, color, sort_order FROM berths ORDER BY sort_order, id"

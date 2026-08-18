@@ -17,6 +17,30 @@ class StoreTests(unittest.TestCase):
         self.store.conn.close()
         self.tmp.close()
 
+    def test_purge_all_clears_targets_berths_and_tombstones(self) -> None:
+        self.store.upsert_discovered_targets(
+            [DiscoveredTarget("forex", 1, 0, "forex:1"), DiscoveredTarget("forex", 2, 0, "forex:2")]
+        )
+        bid = self.store.create_berth("Trading")
+        rows = self.store.list_targets()
+        self.store.set_target_berth(rows[0].id, bid)
+        self.store.set_preview(rows[0].id, "some output")
+        self.store.close_tv(rows[1].id)
+        # a dead tombstone, the thing that otherwise accumulates forever
+        self.store.upsert_discovered_targets([])
+        self.assertTrue(self.store.list_targets())
+
+        self.store.purge_all()
+
+        self.assertEqual(self.store.list_targets(include_hidden=True), [])
+        self.assertEqual(self.store.list_berths(), [])
+        self.assertIsNone(self.store.restore_last_closed_tv())
+
+    def test_purge_all_keeps_settings(self) -> None:
+        self.store.set_setting("ui.theme", "dark")
+        self.store.purge_all()
+        self.assertEqual(self.store.get_setting("ui.theme"), "dark")
+
     def test_upsert_discovery_and_status_transitions(self) -> None:
         first = [
             DiscoveredTarget("forex", 1, 0, "forex:1"),
