@@ -19,7 +19,9 @@ def launch_target(config: OpenBerthConfig, tmux_target: str) -> bool:
         return False
     cmd = format_terminal_command(config.terminal.command, tmux_target)
     try:
+        # shlex.split raises ValueError on unbalanced quotes, which a tmux
+        # session name is allowed to contain.
         subprocess.Popen(shlex.split(cmd))
-    except OSError:
+    except (OSError, ValueError):
         return False
     return True

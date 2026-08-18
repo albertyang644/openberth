@@ -24,20 +24,13 @@ def format_terminal_command(command: str, tmux_target: str) -> str:
 def pop_out_target(config: OpenBerthConfig, tmux_target: str) -> bool:
     cmd = format_terminal_command(config.terminal.command, tmux_target)
     try:
+        # shlex.split raises ValueError on unbalanced quotes, which a tmux
+        # session name is allowed to contain -- don't let that escape as a
+        # crash out of a UI signal handler.
         subprocess.Popen(shlex.split(cmd))
-    except OSError:
+    except (OSError, ValueError):
         return False
     return True
-
-
-def _tmux_attach_argv(tmux_target: str) -> list[str]:
-    session = tmux_target.split(":", 1)[0]
-    window_target = tmux_target.rsplit(".", 1)[0] if "." in tmux_target else tmux_target
-    return [
-        "tmux", "attach", "-t", session,
-        ";", "select-window", "-t", window_target,
-        ";", "select-pane", "-t", tmux_target,
-    ]
 
 
 def _session_has_attached_client(session: str) -> bool:
@@ -47,25 +40,18 @@ def _session_has_attached_client(session: str) -> bool:
     return proc.returncode == 0 and bool(proc.stdout.strip())
 
 
-def _tmux_grouped_view_argv(tmux_target: str) -> list[str]:
-    """tmux's "current window" is per-session, shared by every attached client --
-    there is no per-client window state in vanilla tmux. If this session already
-    has a client attached (e.g. another popped-out TV from the same session),
-    a plain second attach would yank that client's view the instant we
-    select-window. A grouped session shares all windows/panes but gets its own
-    independent current-window pointer, which is the only real tmux mechanism
-    for this. The view is ephemeral and self-destructs via the client-detached
-    hook when its wezterm pane closes, and is filtered out of discovery
-    (EPHEMERAL_VIEW_PREFIX) so it never shows up as a phantom TV."""
-    session = tmux_target.split(":", 1)[0]
-    window_index = tmux_target.rsplit(".", 1)[0].rsplit(":", 1)[1]
-    view_name = f"{EPHEMERAL_VIEW_PREFIX}{session}_{os.getpid()}_{time.time_ns()}"
-    return [
-        "tmux", "new-session", "-t", session, "-s", view_name,
-        ";", "set-hook", "-t", view_name, "client-detached", f"kill-session -t {view_name}",
-        ";", "select-window", "-t", f"{view_name}:{window_index}",
-        ";", "select-pane", "-t", tmux_target,
-    ]
+def _ephemeral_view_name() -> str:
+    """Name for an ephemeral grouped-session view.
+
+    Must stay built only from app-controlled parts. It gets interpolated into
+    the `client-detached` hook body below, which tmux parses as a *command
+    string* -- and tmux session names may contain ";", spaces and quotes (only
+    ":" and "." are reserved). Embedding the real session name here would let a
+    session called `x; run-shell "..."` inject commands that tmux later runs.
+    Nothing reads the session back out of this name; discovery only matches on
+    EPHEMERAL_VIEW_PREFIX, so an opaque name costs nothing.
+    """
+    return f"{EPHEMERAL_VIEW_PREFIX}{os.getpid()}_{time.time_ns()}"
 
 
 def _target_parts(tmux_target: str) -> tuple[str, str, str]:
@@ -137,6 +123,18 @@ def enable_mouse_selection(session: str) -> None:
 
 
 def _prepare_attach_target(tmux_target: str) -> str:
+    """Resolve the session name a client should actually attach to.
+
+    tmux's "current window" is per-session, shared by every attached client --
+    there is no per-client window state in vanilla tmux. If the session already
+    has a client attached (e.g. another popped-out TV from the same session), a
+    plain second attach would yank that client's view the instant we
+    select-window. A grouped session shares all windows/panes but gets its own
+    independent current-window pointer, which is the only real tmux mechanism
+    for this. The view is ephemeral and self-destructs via the client-detached
+    hook when its terminal closes, and is filtered out of discovery
+    (EPHEMERAL_VIEW_PREFIX) so it never shows up as a phantom TV.
+    """
     session, window_target, pane_index = _target_parts(tmux_target)
     if not _session_has_attached_client(session):
         subprocess.run(["tmux", "select-window", "-t", window_target], check=False)
@@ -145,7 +143,7 @@ def _prepare_attach_target(tmux_target: str) -> str:
         return session
 
     window_index = window_target.rsplit(":", 1)[1]
-    view_name = f"{EPHEMERAL_VIEW_PREFIX}{session}_{os.getpid()}_{time.time_ns()}"
+    view_name = _ephemeral_view_name()
     proc = subprocess.run(
         ["tmux", "new-session", "-d", "-t", session, "-s", view_name],
         check=False,

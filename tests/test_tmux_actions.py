@@ -48,7 +48,7 @@ class TmuxActionsTests(unittest.TestCase):
     ) -> None:
         argv = attach_argv_for_target("forex:2.1")
 
-        view = "__openberth_view_forex_456_123"
+        view = "__openberth_view_456_123"
         self.assertEqual(argv, ["tmux", "attach", "-t", view])
         run_mock.assert_any_call(
             ["tmux", "new-session", "-d", "-t", "forex", "-s", view],
@@ -58,6 +58,30 @@ class TmuxActionsTests(unittest.TestCase):
         )
         run_mock.assert_any_call(["tmux", "select-window", "-t", f"{view}:2"], check=False)
         run_mock.assert_any_call(["tmux", "select-pane", "-t", f"{view}:2.1"], check=False)
+
+    @patch("openberth.tmux_actions.time.time_ns", return_value=123)
+    @patch("openberth.tmux_actions.os.getpid", return_value=456)
+    @patch("openberth.tmux_actions.subprocess.run", return_value=Mock(returncode=0))
+    @patch("openberth.tmux_actions._session_has_attached_client", return_value=True)
+    def test_ephemeral_view_name_cannot_carry_session_name_into_hook(
+        self, _attached, run_mock, _pid, _time
+    ) -> None:
+        # tmux allows ";" and quotes in session names, and the client-detached
+        # hook body is parsed by tmux as a command string -- so the view name
+        # must never embed the session name.
+        evil = 'x; run-shell "touch /tmp/pwned"'
+        attach_argv_for_target(f"{evil}:2.1")
+
+        hook_bodies = [
+            call.args[0][-1]
+            for call in run_mock.call_args_list
+            if len(call.args) and "set-hook" in call.args[0]
+        ]
+        self.assertTrue(hook_bodies, "expected a client-detached hook to be set")
+        for body in hook_bodies:
+            self.assertNotIn("run-shell", body)
+            self.assertNotIn(";", body)
+            self.assertEqual(body, "kill-session -t __openberth_view_456_123")
 
     @patch("openberth.tmux_actions.subprocess.run")
     def test_kill_requires_confirmation(self, run_mock) -> None:

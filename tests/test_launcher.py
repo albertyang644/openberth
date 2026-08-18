@@ -22,6 +22,17 @@ class LauncherTests(unittest.TestCase):
         self.assertTrue(ok)
         popen_mock.assert_called_once()
 
+    @patch("openberth.launcher.subprocess.Popen")
+    def test_launch_survives_unbalanced_quote_in_session_name(self, popen_mock) -> None:
+        # tmux allows quotes in session names; shlex.split raises ValueError on
+        # them, which must not escape as a crash.
+        cfg = OpenBerthConfig(
+            viewer=ViewerConfig(type="external_terminal", attach_enabled=True),
+            terminal=TerminalConfig(command="echo attach {target}"),
+        )
+        self.assertFalse(launch_target(cfg, 'my"session:0.0'))
+        popen_mock.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()
