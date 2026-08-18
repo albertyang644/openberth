@@ -24,3 +24,5 @@ Important behaviors:
 - Closing a TV hides metadata only.
 - Killing a target is destructive and requires confirmation.
 - Pop out opens a terminal attached to the selected tmux target.
+- The right panel embeds a terminal attached to the active TV, where tmux owns the mouse.
+- Deleting a berth orphans its TVs; deleting a berth and all its TVs is destructive and confirmed.

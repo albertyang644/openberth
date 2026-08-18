@@ -31,7 +31,9 @@ The mental model is close to browser tabs plus desktop selection. You can select
 - OpenBerth does not replace tmux.
 - OpenBerth does not supervise or restart shell processes.
 - OpenBerth does not hide tmux concepts from automation or configuration.
-- OpenBerth does not kill or mutate tmux state unless the user asks it to.
+- OpenBerth does not kill tmux targets or restructure your sessions, windows,
+  and panes unless the user asks it to. Attaching a TV does set two tmux options
+  on that session (see Embedded Terminal below); nothing else is written.
 
 ## Target Audience
 
@@ -150,12 +152,18 @@ You can:
 
 - Create a new berth.
 - Chain-link selected TVs into a berth.
+- Add a new TV directly into a berth.
 - Rename a berth.
 - Rename the special ungrouped section.
 - Select all TVs in a berth.
 - Change berth color. Colors drive the Harbor accents and each session's tmux status bar.
 - Collapse or expand a berth.
-- Delete a berth, which returns its TVs to the ungrouped section.
+- Reorder berths, either one slot at a time (Move Up / Move Down) or by picking a
+  berth up with its hand icon and carrying it to a new position.
+- Unlink all TVs, which empties the berth but keeps it.
+- Delete Berth, which returns its TVs to the ungrouped section.
+- Delete Berth and All TVs, which kills the underlying tmux targets first. This is
+  destructive and requires confirmation.
 
 ## TV Actions
 
@@ -166,8 +174,26 @@ TVs expose these common actions:
 - Rename: set a display name for the TV.
 - Move To Berth: place the TV into a group.
 - Copy tmux Target: copy the raw tmux target string.
+- Copy Display Name: copy the TV's display name.
 - Close TV: hide it from OpenBerth while tmux keeps running.
 - Kill Target: kill the underlying tmux pane after confirmation.
+
+## Embedded Terminal
+
+With the default `embedded_vte` viewer, the right panel attaches a real terminal to the
+active TV. Two things are worth knowing:
+
+- **tmux owns the mouse.** Attaching sets `mouse on` for that session and unbinds the
+  root `MouseDown3Pane` menu, so drag-to-edge autoscroll, copy-on-select, and
+  right-click paste behave like a normal terminal window. `Alt`+right-click is left
+  bound as an escape hatch to tmux's own menu. These are the only tmux options
+  OpenBerth writes on its own.
+- **Second attach to a busy session.** tmux's current window is per-session, not
+  per-client, so attaching a second TV from the same session would yank the other
+  client's view. OpenBerth instead attaches through a throwaway grouped session named
+  `__openberth_view_*`, which shares every window and pane but keeps its own current-
+  window pointer. It self-destructs on detach and is filtered out of discovery, so it
+  never appears as a phantom TV.
 
 ## Configuration
 
@@ -239,6 +265,8 @@ Build a wheel:
 Important modules:
 
 - `openberth/discovery.py`: tmux discovery.
+- `openberth/config.py`: config loading and defaults.
+- `openberth/models.py`: core dataclasses.
 - `openberth/store.py`: SQLite persistence.
 - `openberth/grouping.py`: berth membership operations.
 - `openberth/selection.py`: desktop-style selection model.
